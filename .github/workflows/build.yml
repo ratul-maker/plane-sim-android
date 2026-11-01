@@ -29,8 +29,15 @@ jobs:
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;23.2.8568313" "cmake;3.22.1" > /dev/null 2>&1
+          yes y | "$SDKMANAGER" --licenses --sdk_root="$ANDROID_HOME" > /tmp/sdk.log 2>&1 || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;23.2.8568313" "cmake;3.22.1" >> /tmp/sdk.log 2>&1
+          SDK_RC=$?
+          if [ "$SDK_RC" -ne 0 ]; then
+            echo "=== SDK INSTALL FAILED (rc=$SDK_RC) ==="
+            tail -n 120 /tmp/sdk.log
+            exit 1
+          fi
+          echo "SDK installed OK"
 
       - name: Get Godot
         run: |
@@ -43,18 +50,30 @@ jobs:
 
       - name: Get templates
         run: |
+          DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
           mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
+          mkdir -p "$DATA_HOME/godot/export_templates/4.3.stable"
           wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz -O /tmp/t.tpz
           unzip -q /tmp/t.tpz -d /tmp/t
           cp -r /tmp/t/templates/* "$HOME/.local/share/godot/export_templates/4.3.stable/"
+          cp -r /tmp/t/templates/* "$DATA_HOME/godot/export_templates/4.3.stable/"
+          ls -la "$HOME/.local/share/godot/export_templates/4.3.stable/" || true
+          ls -la "$DATA_HOME/godot/export_templates/4.3.stable/" || true
 
       - name: Keystore
         run: |
           mkdir -p "$HOME/.android"
-          keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
 
       - name: Settings
         run: |
+          if [ -z "$ANDROID_HOME" ]; then echo "ANDROID_HOME empty"; exit 1; fi
+          if [ -z "$JAVA_HOME" ]; then echo "JAVA_HOME empty"; exit 1; fi
           mkdir -p "$HOME/.config/godot"
           F="$HOME/.config/godot/editor_settings-4.3.tres"
           echo '[gd_resource type="EditorSettings" format=3]' > "$F"
@@ -66,19 +85,47 @@ jobs:
           echo 'export/android/debug_keystore_user = "androiddebugkey"' >> "$F"
           echo 'export/android/debug_keystore_pass = "android"' >> "$F"
           echo 'export/android/debug_keystore_alias = "androiddebugkey"' >> "$F"
+          test -s "$F" || { echo "settings file empty"; exit 1; }
+
+      - name: Debug info
+        run: |
+          echo "=== ANDROID_HOME ==="; echo "$ANDROID_HOME"
+          echo "=== JAVA_HOME ==="; echo "$JAVA_HOME"
+          echo "=== XDG_DATA_HOME ==="; echo "${XDG_DATA_HOME:-<unset>}"
+          echo "=== keystore ==="; ls -la "$HOME/.android/debug.keystore" || true
+          echo "=== godot settings ==="; cat "$HOME/.config/godot/editor_settings-4.3.tres" || true
+          echo "=== templates (home) ==="; ls -la "$HOME/.local/share/godot/export_templates/4.3.stable/" || true
+          echo "=== templates (xdg) ==="; ls -la "${XDG_DATA_HOME:-$HOME/.local/share}/godot/export_templates/4.3.stable/" || true
+          echo "=== export_presets keystore keys ==="; grep -E 'keystore/' export_presets.cfg | sed 's/=.*/=***/' || true
 
       - name: Import
-        run: timeout 300 godot --headless --path . --import --quit || true
+        run: |
+          timeout 300 godot --headless --path . --import --quit > /tmp/import.log 2>&1 || true
+          echo "=== IMPORT LOG (last 40) ==="
+          tail -n 40 /tmp/import.log || true
 
       - name: Export
         run: |
+          set +o pipefail
+          export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
           mkdir -p build
-          godot --headless --path . --export-debug "Android" build/plane-sim.apk
+          godot --headless --verbose --path . --export-debug "Android" build/plane-sim.apk 2>&1 | tee /tmp/export.log
+          GODOT_RC=${PIPESTATUS[0]}
+          set -o pipefail
+          if [ "$GODOT_RC" -ne 0 ] || [ ! -s build/plane-sim.apk ]; then
+            echo "=== EXPORT FAILED (rc=$GODOT_RC) — LAST 150 LINES ==="
+            tail -n 150 /tmp/export.log
+            echo "=== IMPORT LOG (last 60) ==="
+            tail -n 60 /tmp/import.log || true
+            exit 1
+          fi
+          echo "APK built: $(ls -la build/plane-sim.apk)"
 
       - uses: actions/upload-artifact@v4
         with:
           name: apk
           path: build/plane-sim.apk
+          if-no-files-found: error
 
       - uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
