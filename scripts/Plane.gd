@@ -1,5 +1,5 @@
 extends RigidBody3D
-class_name Plane
+class_name Aircraft
 
 @export var max_thrust: float = 9000.0
 @export var lift_coefficient: float = 9.0
@@ -71,7 +71,7 @@ func _physics_process(_delta: float) -> void:
     apply_central_force(-lat_vel * lateral_drag)
 
     stall_warning = forward_speed < stall_speed and not on_ground
-    var authority: float = clamp(forward_speed / min_takeoff_speed, 0.0, 1.0)
+    var authority: float = clamp(forward_speed / max(min_takeoff_speed, 1.0), 0.0, 1.0)
     if not on_ground:
         apply_torque(br * (pitch_input + trim) * pitch_torque * authority)
         apply_torque(bf * roll_input * roll_torque * authority)
