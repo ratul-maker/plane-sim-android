@@ -1,0 +1,83 @@
+name: Build APK
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager)"; fi
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;23.2.8568313" "cmake;3.22.1"
+
+      - name: Get Godot
+        run: |
+          mkdir -p "$HOME/godot"
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip -O /tmp/g.zip
+          unzip -q /tmp/g.zip -d "$HOME/godot"
+          mv "$HOME/godot/Godot_v4.3-stable_linux.x86_64" "$HOME/godot/godot"
+          chmod +x "$HOME/godot/godot"
+          echo "$HOME/godot" >> "$GITHUB_PATH"
+
+      - name: Get templates
+        run: |
+          mkdir -p "$HOME/.local/share/godot/export_templates/4.3.stable"
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz -O /tmp/t.tpz
+          unzip -q /tmp/t.tpz -d /tmp/t
+          cp -r /tmp/t/templates/* "$HOME/.local/share/godot/export_templates/4.3.stable/"
+
+      - name: Keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Settings
+        run: |
+          mkdir -p "$HOME/.config/godot"
+          F="$HOME/.config/godot/editor_settings-4.3.tres"
+          echo '[gd_resource type="EditorSettings" format=3]' > "$F"
+          echo '' >> "$F"
+          echo '[resource]' >> "$F"
+          echo "export/android/android_sdk_path = \"${ANDROID_HOME}\"" >> "$F"
+          echo "export/android/java_sdk_path = \"${JAVA_HOME}\"" >> "$F"
+          echo "export/android/debug_keystore = \"${HOME}/.android/debug.keystore\"" >> "$F"
+          echo 'export/android/debug_keystore_user = "androiddebugkey"' >> "$F"
+          echo 'export/android/debug_keystore_pass = "android"' >> "$F"
+          echo 'export/android/debug_keystore_alias = "androiddebugkey"' >> "$F"
+
+      - name: Import
+        run: timeout 300 godot --headless --path . --import --quit || true
+
+      - name: Export
+        run: |
+          mkdir -p build
+          godot --headless --path . --export-debug "Android" build/plane-sim.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: build/plane-sim.apk
+
+      - uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          files: build/plane-sim.apk
+          tag_name: build-${{ github.run_number }}-${{ github.run_attempt }}
+          name: Build ${{ github.run_number }}
+          prerelease: true
