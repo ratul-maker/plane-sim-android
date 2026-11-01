@@ -1,6 +1,6 @@
 extends Node3D
 
-@onready var plane: Plane = $Plane
+@onready var plane: Aircraft = $Plane
 @onready var camera: Camera3D = $Camera3D
 @onready var hud = $HUD
 
@@ -114,4 +114,5 @@ func _update_camera(delta: float) -> void:
 
 func _on_crash() -> void:
     await get_tree().create_timer(2.0).timeout
-    plane.reset()
+    if is_instance_valid(plane):
+        plane.reset()
