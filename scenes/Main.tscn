@@ -1,0 +1,25 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/Main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/Plane.tscn" id="2_plane"]
+[ext_resource type="Script" path="res://scripts/HUD.gd" id="3_hud"]
+
+[node name="Main" type="Node3D"]
+script = ExtResource("1_main")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, -0.25, 0.433, 0, 0.866, 0.5, -0.5, -0.433, 0.75, 0, 30, 0)
+light_energy = 1.5
+shadow_enabled = true
+
+[node name="Plane" parent="." instance=ExtResource("2_plane")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.5, 0)
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 15)
+current = true
+fov = 70.0
+far = 5000.0
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("3_hud")
