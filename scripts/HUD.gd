@@ -1,6 +1,6 @@
 extends CanvasLayer
 
-var plane: Plane
+var plane: Aircraft
 var speed_label: Label
 var alt_label: Label
 var throttle_label: Label
@@ -16,7 +16,9 @@ var joystick_center: Vector2 = Vector2(180, 560)
 var joystick_radius: float = 120.0
 var touch_id: int = -1
 var touch_start: Vector2 = Vector2.ZERO
-var button_size: int = 140
+var button_size: int = 96
+var knob_size: int = 64
+var base_size: int = 128
 
 func _ready() -> void:
     var root := Control.new()
@@ -66,33 +68,34 @@ func _ready() -> void:
 
     touch_layer = Control.new()
     touch_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
-    touch_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    touch_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+    touch_layer.gui_input.connect(_on_touch_layer_input)
     root.add_child(touch_layer)
 
     joystick_base = TextureRect.new()
-    joystick_base.texture = _circle(260, Color(1, 1, 1, 0.15))
+    joystick_base.texture = _circle(base_size, Color(1, 1, 1, 0.15))
     joystick_base.mouse_filter = Control.MOUSE_FILTER_IGNORE
     touch_layer.add_child(joystick_base)
 
     joystick_knob = TextureRect.new()
-    joystick_knob.texture = _circle(120, Color(1, 1, 1, 0.35))
+    joystick_knob.texture = _circle(knob_size, Color(1, 1, 1, 0.35))
     joystick_knob.mouse_filter = Control.MOUSE_FILTER_IGNORE
     touch_layer.add_child(joystick_knob)
 
-    _make_button("THR+", Vector2(-160, -280), "_on_thr_up")
-    _make_button("THR-", Vector2(-160, -140), "_on_thr_down")
-    _make_button("BRAKE", Vector2(-320, -140), "_on_brake")
-    _make_button("RESET", Vector2(-320, -280), "_on_reset")
-    _make_button("CAM", Vector2(-480, -140), "_on_cam")
-    _make_button("GEAR", Vector2(-480, -280), "_on_gear")
+    _make_button("THR+", Vector2(-120, -240), "_on_thr_up")
+    _make_button("THR-", Vector2(-120, -120), "_on_thr_down")
+    _make_button("BRAKE", Vector2(-240, -120), "_on_brake")
+    _make_button("RESET", Vector2(-240, -240), "_on_reset")
+    _make_button("CAM", Vector2(-360, -120), "_on_cam")
+    _make_button("GEAR", Vector2(-360, -240), "_on_gear")
 
     call_deferred("_update_joystick_position")
 
 func _update_joystick_position() -> void:
     var vs := get_viewport().get_visible_rect().size
     joystick_center = Vector2(180, vs.y - 160)
-    joystick_base.position = joystick_center - Vector2(130, 130)
-    joystick_knob.position = joystick_center - Vector2(60, 60)
+    joystick_base.position = joystick_center - Vector2(base_size / 2, base_size / 2)
+    joystick_knob.position = joystick_center - Vector2(knob_size / 2, knob_size / 2)
 
 func _mk(t: String) -> Label:
     var l := Label.new()
@@ -109,20 +112,28 @@ func _make_button(t: String, offset: Vector2, method: String) -> void:
     holder.offset_top = offset.y
     holder.offset_right = offset.x + button_size
     holder.offset_bottom = offset.y + button_size
-    holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    holder.mouse_filter = Control.MOUSE_FILTER_PASS
     touch_layer.add_child(holder)
 
-    var b := TouchScreenButton.new()
+    var b := TextureButton.new()
     b.texture_normal = _circle(button_size, Color(1, 1, 1, 0.25))
     b.texture_pressed = _circle(button_size, Color(1, 1, 1, 0.5))
-    b.action = ""
+    b.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+    b.set_anchors_preset(Control.PRESET_FULL_RECT)
+    b.offset_left = 0
+    b.offset_top = 0
+    b.offset_right = 0
+    b.offset_bottom = 0
+    b.mouse_filter = Control.MOUSE_FILTER_STOP
     b.pressed.connect(Callable(self, method))
     holder.add_child(b)
 
     var lbl := _mk(t)
-    lbl.position = Vector2(0, button_size / 2 - 14)
-    lbl.size = Vector2(button_size, 30)
+    lbl.set_anchors_preset(Control.PRESET_FULL_RECT)
+    lbl.offset_top = button_size / 2 - 14
+    lbl.offset_bottom = button_size / 2 + 14
     lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
     holder.add_child(lbl)
 
@@ -162,7 +173,7 @@ func _on_gear() -> void:
     if plane:
         plane.toggle_gear()
 
-func _input(event: InputEvent) -> void:
+func _on_touch_layer_input(event: InputEvent) -> void:
     if event is InputEventScreenTouch:
         var t: InputEventScreenTouch = event
         if t.pressed and touch_id == -1 and t.position.distance_to(joystick_center) < 200.0 and t.position.x < 700.0:
@@ -173,7 +184,7 @@ func _input(event: InputEvent) -> void:
             if plane:
                 plane.pitch_input = 0.0
                 plane.roll_input = 0.0
-            joystick_knob.position = joystick_center - Vector2(60, 60)
+            joystick_knob.position = joystick_center - Vector2(knob_size / 2, knob_size / 2)
     elif event is InputEventScreenDrag:
         var d: InputEventScreenDrag = event
         if d.index == touch_id and plane:
@@ -181,7 +192,7 @@ func _input(event: InputEvent) -> void:
             var dir: Vector2 = delta.limit_length(joystick_radius)
             plane.pitch_input = clamp(-dir.y / joystick_radius, -1.0, 1.0)
             plane.roll_input = clamp(dir.x / joystick_radius, -1.0, 1.0)
-            joystick_knob.position = joystick_center + dir - Vector2(60, 60)
+            joystick_knob.position = joystick_center + dir - Vector2(knob_size / 2, knob_size / 2)
 
 func _process(_delta: float) -> void:
     if not plane:
