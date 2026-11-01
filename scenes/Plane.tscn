@@ -1,0 +1,26 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/Plane.gd" id="1_plane"]
+
+[sub_resource type="BoxMesh" id="body_mesh"]
+size = Vector3(2, 1.2, 6)
+
+[sub_resource type="BoxShape3D" id="body_shape"]
+size = Vector3(2, 1.2, 6)
+
+[node name="Plane" type="RigidBody3D"]
+mass = 1200.0
+gravity_scale = 1.0
+linear_damp = 0.05
+angular_damp = 0.6
+collision_layer = 2
+collision_mask = 1
+contact_monitor = true
+max_contacts_reported = 4
+script = ExtResource("1_plane")
+
+[node name="Body" type="MeshInstance3D" parent="."]
+mesh = SubResource("body_mesh")
+
+[node name="Collision" type="CollisionShape3D" parent="."]
+shape = SubResource("body_shape")
